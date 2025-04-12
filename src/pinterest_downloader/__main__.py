@@ -5,8 +5,9 @@ from rich import print
 
 from pinterest_downloader.consts import DOWNLOAD_PATH
 from pinterest_downloader.cookies import load_cookies, save_cookies
-from pinterest_downloader.scrape import (extract_and_save_image, extract_artist_name,
-                                  get_gallery_media)
+from pinterest_downloader.scrape import (extract_and_save_image,
+                                         extract_artist_name,
+                                         get_gallery_media)
 
 
 def main() -> None:
