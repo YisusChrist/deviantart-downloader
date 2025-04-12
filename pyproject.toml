@@ -3,22 +3,21 @@ name = "pinterest-downloader"
 version = "0.1.0"
 description = ""
 license = "GPL-3.0-only"
-authors = [
-    {name = "YisusChrist",email = "agelrenorenardo@gmail.com"}
-]
+authors = [{ name = "YisusChrist", email = "agelrenorenardo@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.9,<4.0"
 dependencies = [
-    "requests (>=2.32.3,<3.0.0)",
-    "requests-pprint (>=1.2.2,<2.0.0)",
-    "beautifulsoup4 (>=4.13.3,<5.0.0)",
+  "requests (>=2.32.3,<3.0.0)",
+  "requests-pprint (>=1.2.2,<2.0.0)",
+  "beautifulsoup4 (>=4.13.3,<5.0.0)",
+  "fake-useragent (>=2.1.0,<3.0.0)",
 ]
 
 [project.urls]
 repository = "https://github.com/YisusChrist/pinterest-downloader"
 
 [tool.poetry]
-packages = [{include = "pinterest_downloader", from = "src"}]
+packages = [{ include = "pinterest_downloader", from = "src" }]
 
 [tool.poetry.group.types.dependencies]
 types-requests = "^2.32.0.20250328"
