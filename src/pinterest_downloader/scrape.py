@@ -43,6 +43,11 @@ def send_request(*, session: Session, **kwargs: Any) -> Optional[Response]:
         return None
 
     if "Set-Cookie" in response.headers:
+        # Check if the session cookie auth has been deleted
+        if "auth=deleted" in response.headers["Set-Cookie"]:
+            print("Session cookies have been deleted. Please log in again.")
+            return None
+
         print("Session cookies have changed. Sending request again...")
         # Retry the request with updated cookies
         return send_request(session=session, **kwargs)
