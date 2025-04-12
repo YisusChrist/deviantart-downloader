@@ -1,4 +1,3 @@
-import json
 import re
 from pathlib import Path
 from typing import Any, Optional
@@ -189,9 +188,6 @@ def get_gallery_media(
     if not response:
         return []
 
-    with open("response.html", "w", encoding="utf-8") as file:
-        file.write(response.text)
-
     soup: BeautifulSoup = BeautifulSoup(response.text, "html.parser")
     span_tag: Tag | NavigableString | None = soup.find("span", class_="_1Mrww")
     if span_tag is None or isinstance(span_tag, NavigableString):
@@ -225,9 +221,6 @@ def get_gallery_media(
     if not response:
         print("Failed to retrieve gallery media.")
         return []
-
-    with open("response.json", "w", encoding="utf-8") as file:
-        json.dump(response.json(), file, indent=2)
 
     results = response.json().get("results", [])
     print(f"Number of results: {len(results)}")
