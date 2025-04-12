@@ -4,7 +4,7 @@ from requests import Session
 from rich import print
 
 from pinterest_downloader.cookies import load_cookies, save_cookies
-from pinterest_downloader.scrape import get_user_agent, save_deviantart_art
+from pinterest_downloader.scrape import save_deviantart_art
 
 
 def is_valid_deviantart_url(url: str) -> tuple[bool, str]:
@@ -27,7 +27,9 @@ def main() -> None:
 
     session = Session()
 
-    headers: dict[str, str] = {"User-Agent": get_user_agent()}
+    headers: dict[str, str] = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+    }
     cookies: dict[str, str] = load_cookies()
     if not cookies:
         print("No cookies found. Please log in first.")
