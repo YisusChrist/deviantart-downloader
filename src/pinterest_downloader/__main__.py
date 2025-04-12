@@ -1,13 +1,22 @@
-from pathlib import Path
+from urllib.parse import ParseResult, urlparse
 
 from requests import Session
 from rich import print
 
-from pinterest_downloader.consts import DOWNLOAD_PATH
 from pinterest_downloader.cookies import load_cookies, save_cookies
-from pinterest_downloader.scrape import (extract_and_save_image,
-                                         extract_artist_name,
-                                         get_gallery_media)
+from pinterest_downloader.scrape import get_user_agent, save_deviantart_art
+
+
+def is_valid_deviantart_url(url: str) -> tuple[bool, str]:
+    parsed: ParseResult = urlparse(url)
+    if not parsed.netloc.endswith("deviantart.com"):
+        return False, ""
+
+    parts: list[str] = parsed.path.strip("/").split("/")
+    if len(parts) < 2:
+        return False, ""
+
+    return parts[1] in {"art", "gallery"}, parts[1]
 
 
 def main() -> None:
@@ -18,10 +27,7 @@ def main() -> None:
 
     session = Session()
 
-    headers: dict[str, str] = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-    }
-
+    headers: dict[str, str] = {"User-Agent": get_user_agent()}
     cookies: dict[str, str] = load_cookies()
     if not cookies:
         print("No cookies found. Please log in first.")
@@ -29,20 +35,29 @@ def main() -> None:
 
     session.cookies.update(cookies)  # type: ignore
 
-    # Extract artist name from URL
-    artist: str = extract_artist_name(url)
-    print(f"Extracted artist name: {artist}")
+    parsed_url: ParseResult = urlparse(url)
+    if not parsed_url.scheme or not parsed_url.netloc:
+        print("Invalid URL provided.")
+        return
 
-    for url in get_gallery_media(
-        session=session, url=url, headers=headers, artist=artist
-    ):
-        # Create directory for the artist if it doesn't exist
-        artist_dir: Path = (DOWNLOAD_PATH / artist).resolve()
-        artist_dir.mkdir(parents=True, exist_ok=True)
+    # Check if the URL is a valid Deviantart URL
+    valid, path_type = is_valid_deviantart_url(url)
+    if not valid:
+        print("Invalid Deviantart URL provided.")
+        return
 
-        # Extract and save the image
-        print(f"Extracting and saving image from {url}...")
-        extract_and_save_image(session, url, headers, artist_dir)
+    # Check if the URL is a gallery or art URL
+    if path_type == "gallery":
+        print("Gallery URL provided.")
+        save_deviantart_art(session, url, headers)
+    elif path_type == "deviation":
+        print("Deviation URL provided.")
+        save_deviantart_art(session, url, headers)
+    elif path_type == "art":
+        print("Art URL provided.")
+        save_deviantart_art(session, url, headers)
+    else:
+        print("Unknown URL type provided.")
 
     # Save cookies to file
     save_cookies(session.cookies.get_dict())

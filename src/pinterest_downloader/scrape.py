@@ -5,11 +5,23 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, ResultSet, Tag
+from fake_useragent import UserAgent
 from requests import Response, Session, get
 from requests_pprint import print_response_summary
 from rich import print
 
 from pinterest_downloader.consts import DOWNLOAD_PATH, MAX_GALLERY_ITEMS
+
+ua = UserAgent(min_version=120.0)
+_user_agent: str = ""
+
+
+def get_user_agent() -> str:
+    global _user_agent
+
+    if _user_agent == "":
+        _user_agent = ua.random
+    return _user_agent
 
 
 def send_request(*, session: Session, **kwargs: Any) -> Optional[Response]:
@@ -29,6 +41,11 @@ def send_request(*, session: Session, **kwargs: Any) -> Optional[Response]:
     if not response.ok:
         print_response_summary(response)
         return None
+
+    if "Set-Cookie" in response.headers:
+        print("Session cookies have changed. Sending request again...")
+        # Retry the request with updated cookies
+        return send_request(session=session, **kwargs)
 
     return response
 
@@ -120,11 +137,18 @@ def save_image(content: bytes, url: str, download_path: Path) -> Path:
     return image_path
 
 
-def extract_and_save_image(
+def ensure_path_exists(folder_name: str) -> Path:
+    # Create directory for the artist if it doesn't exist
+    artist_path: Path = (DOWNLOAD_PATH / folder_name).resolve()
+    artist_path.mkdir(parents=True, exist_ok=True)
+    return artist_path
+
+
+def save_deviantart_art(
     session: Session,
     url: str,
     headers: dict[str, str],
-    artist_path: Optional[Path] = None,
+    artist: Optional[str] = None,
 ) -> None:
     """
     Extracts the image URL from the HTML content and saves the image to a file.
@@ -140,19 +164,13 @@ def extract_and_save_image(
     response: Response | None = send_request(session=session, url=url, headers=headers)
     if not response:
         return
-    if "Set-Cookie" in response.headers:
-        print("Session cookies have changed. Sending request again...")
-        # Retry the request with updated cookies
-        send_request(session=session, url=url, headers=headers)
 
-    if not artist_path:
+    if not artist:
         print("No artist name provided.")
-        artist: str = extract_artist_name(url)
-        print(f"Extracted artist name: {artist}")
-        # Create directory for the artist if it doesn't exist
-        artist_path = (DOWNLOAD_PATH / artist).resolve()
-        artist_path.mkdir(parents=True, exist_ok=True)
-        input("Press Enter to continue...")
+        artist = extract_artist_name(url)
+
+    # Create directory for the artist if it doesn't exist
+    artist_path: Path = ensure_path_exists(artist)
 
     img_classes: list[str] = ["TZM0T", "_2NIJr"]
     img_url: str | None = extract_image_url(response.text, img_classes)
@@ -227,3 +245,33 @@ def get_gallery_media(
     input("Press Enter to continue...")
 
     return results
+
+
+def save_deviantart_gallery(
+    session: Session,
+    url: str,
+    headers: dict[str, str],
+    artist: Optional[str] = None,
+) -> None:
+    """
+    Extracts the gallery media from the specified URL and saves each image to
+    a file. If the session cookies change, it retries the request with updated
+    cookies.
+
+    Args:
+        session (requests.Session): The requests session to use.
+        url (str): The URL to send the request to.
+        headers (dict[str, str]): The headers to include in the request.
+        artist (str): The name of the artist. If not provided, it will be
+            extracted from the URL.
+    """
+    if not artist:
+        print("No artist name provided.")
+        artist = extract_artist_name(url)
+
+    for url in get_gallery_media(
+        session=session, url=url, headers=headers, artist=artist
+    ):
+        # Extract and save the image
+        print(f"Extracting and saving image from {url}...")
+        save_deviantart_art(session, url, headers, artist)
