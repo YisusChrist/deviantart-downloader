@@ -4,7 +4,8 @@ from requests import Session
 from rich import print
 
 from pinterest_downloader.cookies import load_cookies, save_cookies
-from pinterest_downloader.scrape import save_deviantart_art
+from pinterest_downloader.scrape import (save_deviantart_art,
+                                         save_deviantart_gallery)
 
 
 def is_valid_deviantart_url(url: str) -> tuple[bool, str]:
@@ -51,10 +52,7 @@ def main() -> None:
     # Check if the URL is a gallery or art URL
     if path_type == "gallery":
         print("Gallery URL provided.")
-        save_deviantart_art(session, url, headers)
-    elif path_type == "deviation":
-        print("Deviation URL provided.")
-        save_deviantart_art(session, url, headers)
+        save_deviantart_gallery(session, url, headers)
     elif path_type == "art":
         print("Art URL provided.")
         save_deviantart_art(session, url, headers)
