@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
@@ -9,8 +9,11 @@ from fake_useragent import UserAgent
 from requests_cache import AnyResponse, CachedSession
 from requests_pprint import print_response_summary
 from rich import print
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TimeElapsedColumn, TimeRemainingColumn)
 
-from deviantart_downloader.consts import DOWNLOAD_PATH, MAX_GALLERY_ITEMS
+from deviantart_downloader.consts import (DOWNLOAD_PATH, MAX_GALLERY_ITEMS,
+                                          PROGRESS_BAR_SEPARATOR)
 
 ua = UserAgent(min_version=120.0)
 _user_agent: str = ""
@@ -291,7 +294,6 @@ def _fetch_media_batch(
         return None
 
     results: list[dict[str, Any]] = response_json.get("results", [])
-    print(f"Number of results: {len(results)}")
 
     return {
         "urls": _extract_image_urls_from_results(results),
@@ -344,71 +346,6 @@ def _extract_image_urls_from_results(results: list[dict[str, Any]]) -> list[str]
     return media_urls
 
 
-def get_gallery_media(
-    session: CachedSession, url: str, headers: dict[str, str], artist: str
-) -> Generator[list[str], None, None]:
-    """
-    Retrieves the gallery media from the specified URL using the provided
-    session and headers. It extracts the total number of images and constructs
-    the API URL for fetching the media.
-
-    Args:
-        session (requests_cache.CachedSession): The requests session to use.
-        url (str): The URL to send the request to.
-        headers (dict[str, str]): The headers to include in the request.
-        artist (str): The name of the artist.
-
-    Returns:
-        Generator[list[str], None, None]: A generator yielding lists of media
-            URLs.
-    """
-    response: AnyResponse | None = send_request(
-        session=session, url=url, headers=headers
-    )
-    if not response:
-        return
-
-    soup: BeautifulSoup = BeautifulSoup(response.text, "html.parser")
-    span_tag: Tag | NavigableString | None = soup.find("span", class_="_1Mrww")
-    if span_tag is None or isinstance(span_tag, NavigableString):
-        print("Span tag not found.")
-        return
-
-    total_images: int | None = _extract_total_images(soup)
-    if total_images is None:
-        return
-
-    print(f"Total images: {total_images}")
-
-    csrf_token: str | None = extract_csrf_token(soup)
-    if not csrf_token:
-        print("CSRF token not found.")
-        return
-
-    folder_id: str = urlparse(url).path.split("/gallery/")[1].split("/")[0]
-    offset: int = 0
-
-    has_more: bool = True
-    while has_more:
-        media_batch: dict[str, Any] | None = _fetch_media_batch(
-            session,
-            headers,
-            artist,
-            folder_id,
-            offset,
-            csrf_token,
-        )
-        if not media_batch:
-            break
-
-        print("Found total images:", len(media_batch["urls"]))
-        yield media_batch["urls"]
-
-        if not media_batch["has_more"]:
-            break
-        offset = media_batch["next_offset"]
-
-
 def save_deviantart_gallery(
     session: CachedSession,
     url: str,
@@ -434,11 +371,67 @@ def save_deviantart_gallery(
     # Create directory for the artist if it doesn't exist
     artist_path: Path = ensure_path_exists(artist)
 
-    for batch in get_gallery_media(session, url, headers, artist):
-        for media_url in batch:
-            download_media(session, media_url, artist_path)
+    folder_id: str = urlparse(url).path.split("/gallery/")[1].split("/")[0]
 
-    print(ok_count)
+    response: AnyResponse | None = send_request(
+        session=session, url=url, headers=headers
+    )
+    if not response:
+        print("Failed to fetch gallery page.")
+        return
+
+    soup: BeautifulSoup = BeautifulSoup(response.text, "html.parser")
+    span_tag: Tag | NavigableString | None = soup.find("span", class_="_1Mrww")
+    if span_tag is None or isinstance(span_tag, NavigableString):
+        print("Span tag not found.")
+        return
+
+    total_images: int | None = _extract_total_images(soup)
+    if total_images is None or total_images == 0:
+        print("No images found.")
+        return
+
+    csrf_token: str | None = extract_csrf_token(soup)
+    if not csrf_token:
+        print("CSRF token not found.")
+        return
+
+    print(f"Total images: {total_images}")
+
+    offset: int = 0
+    with Progress(
+        SpinnerColumn(),
+        "[progress.description]{task.description}",
+        BarColumn(bar_width=None),
+        PROGRESS_BAR_SEPARATOR,
+        "[progress.percentage]{task.percentage:>6.2f}% ({task.completed}/{task.total})",
+        PROGRESS_BAR_SEPARATOR,
+        TimeElapsedColumn(),
+        PROGRESS_BAR_SEPARATOR,
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task("[bold cyan]Downloading...", total=total_images)
+        while True:
+            media_batch: dict[str, Any] | None = _fetch_media_batch(
+                session,
+                headers,
+                artist,
+                folder_id,
+                offset,
+                csrf_token,
+            )
+            if not media_batch:
+                break
+
+            for url in media_batch["urls"]:
+                download_media(session, url, artist_path)
+                progress.update(task, advance=1)
+
+            if not media_batch["has_more"]:
+                break
+            offset = media_batch["next_offset"]
+
+    print("Downloaded images:", ok_count)
     if error_list:
         print("Errors occurred during download:")
         for error in error_list:
