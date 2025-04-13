@@ -3,9 +3,9 @@ from urllib.parse import ParseResult, urlparse
 from requests_cache import CachedSession
 from rich import print
 
-from pinterest_downloader.cookies import load_cookies, save_cookies
-from pinterest_downloader.scrape import (save_deviantart_art,
-                                         save_deviantart_gallery)
+from deviantart_downloader.cookies import load_cookies, save_cookies
+from deviantart_downloader.scrape import (save_deviantart_art,
+                                          save_deviantart_gallery)
 
 
 def is_valid_deviantart_url(url: str) -> tuple[bool, str]:

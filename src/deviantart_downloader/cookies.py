@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from pinterest_downloader.consts import COOKIES_FILE_PATH
+from deviantart_downloader.consts import COOKIES_FILE_PATH
 
 
 def load_cookies(file_path: Path = COOKIES_FILE_PATH) -> dict[str, str]:

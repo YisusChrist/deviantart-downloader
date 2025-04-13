@@ -1,5 +1,5 @@
 [project]
-name = "pinterest-downloader"
+name = "deviantart-downloader"
 version = "0.1.0"
 description = ""
 license = "GPL-3.0-only"
@@ -14,17 +14,17 @@ dependencies = [
 ]
 
 [project.urls]
-repository = "https://github.com/YisusChrist/pinterest-downloader"
+repository = "https://github.com/YisusChrist/deviantart-downloader"
 
 [tool.poetry]
-packages = [{ include = "pinterest_downloader", from = "src" }]
+packages = [{ include = "deviantart_downloader", from = "src" }]
 
 [tool.poetry.group.types.dependencies]
 types-requests = "^2.32.0.20250328"
 types-beautifulsoup4 = "^4.12.0.20250204"
 
 [project.scripts]
-pinterest-downloader = "pinterest_downloader.__main__:main"
+deviantart-downloader = "deviantart_downloader.__main__:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

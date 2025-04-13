@@ -10,7 +10,7 @@ from requests_cache import AnyResponse, CachedSession
 from requests_pprint import print_response_summary
 from rich import print
 
-from pinterest_downloader.consts import DOWNLOAD_PATH, MAX_GALLERY_ITEMS
+from deviantart_downloader.consts import DOWNLOAD_PATH, MAX_GALLERY_ITEMS
 
 ua = UserAgent(min_version=120.0)
 _user_agent: str = ""
