@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Generator, Optional
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
@@ -14,6 +14,9 @@ from pinterest_downloader.consts import DOWNLOAD_PATH, MAX_GALLERY_ITEMS
 
 ua = UserAgent(min_version=120.0)
 _user_agent: str = ""
+
+ok_count: int = 0
+error_list: list[str] = []
 
 
 def get_user_agent() -> str:
@@ -133,20 +136,50 @@ def save_image(content: bytes, url: str, download_path: Path) -> Path:
     Returns:
         Path: The path to the saved image file.
     """
+    global ok_count
+
     image_name: str = Path(urlparse(url).path).name
     image_path: Path = (download_path / image_name).resolve()
     with open(image_path, "wb") as file:
         file.write(content)
-    print(f"Image saved to {image_path}")
+    # print(f"Image saved to {image_path}")
+
+    ok_count += 1
 
     return image_path
 
 
 def ensure_path_exists(folder_name: str) -> Path:
+    """
+    Ensures that the directory for the artist exists. If not, it creates it.
+
+    Args:
+        folder_name (str): The name of the artist.
+
+    Returns:
+        Path: The path to the artist's directory.
+    """
     # Create directory for the artist if it doesn't exist
     artist_path: Path = (DOWNLOAD_PATH / folder_name).resolve()
     artist_path.mkdir(parents=True, exist_ok=True)
     return artist_path
+
+
+def download_media(url: str, artist_path: Path) -> None:
+    """
+    Downloads media from the specified URL and saves it to the given artist path.
+    If the response is not OK, it prints the response summary.
+
+    Args:
+        url (str): The URL to download the media from.
+        artist_path (Path): The path to save the downloaded media.
+    """
+    response: Response = get(url)
+    if not response.ok:
+        print_response_summary(response)
+        return
+
+    save_image(response.content, url, artist_path)
 
 
 def save_deviantart_art(
@@ -182,17 +215,135 @@ def save_deviantart_art(
     if not img_url:
         return
 
-    response = get(img_url)
-    if not response.ok:
-        print_response_summary(response)
-        return
+    download_media(img_url, artist_path)
 
-    save_image(response.content, img_url, artist_path)
+
+def _extract_total_images(soup: BeautifulSoup) -> Optional[int]:
+    """
+    Extracts the total number of images from the HTML content using BeautifulSoup.
+
+    Args:
+        soup (BeautifulSoup): The BeautifulSoup object containing the HTML
+            content.
+
+    Returns:
+        Optional[int]: The total number of images, or None if not found.
+    """
+    span_tag: Tag | NavigableString | None = soup.find("span", class_="_1Mrww")
+    if not span_tag or isinstance(span_tag, NavigableString):
+        print("Total image count not found.")
+        return None
+    try:
+        return int(span_tag.text.strip())
+    except ValueError:
+        print("Failed to parse total image count.")
+        return None
+
+
+def _fetch_media_batch(
+    session: Session,
+    headers: dict[str, str],
+    artist: str,
+    folder_id: str,
+    offset: int,
+    csrf_token: str,
+) -> Optional[dict[str, Any]]:
+    """
+    Fetches a batch of media items from the DeviantArt API.
+
+    Args:
+        session (requests.Session): The requests session to use.
+        headers (dict[str, str]): The headers to include in the request.
+        artist (str): The name of the artist.
+        folder_id (str): The ID of the folder.
+        offset (int): The offset for pagination.
+        csrf_token (str): The CSRF token for authentication.
+
+    Returns:
+        Optional[dict[str, Any]]: The response JSON containing media URLs and
+            pagination information.
+    """
+    params: dict[str, str | int] = {
+        "username": artist,
+        "type": "gallery",
+        "order": "default",
+        "offset": offset,
+        "limit": MAX_GALLERY_ITEMS,
+        "folderid": folder_id,
+        "da_minor_version": 20230710,
+        "csrf_token": csrf_token,
+    }
+
+    api_url = "https://deviantart.com/_puppy/dashared/gallection/contents"
+    response: Response | None = send_request(
+        session=session, url=api_url, headers=headers, params=params
+    )
+    if not response:
+        print("Failed to fetch gallery media batch.")
+        return None
+
+    response_json: dict[str, Any] | None = response.json()
+    if not response_json:
+        print("No results found.")
+        return None
+
+    results: list[dict[str, Any]] = response_json.get("results", [])
+    print(f"Number of results: {len(results)}")
+
+    return {
+        "urls": _extract_image_urls_from_results(results),
+        "has_more": response_json.get("hasMore", False),
+        "next_offset": response_json.get("nextOffset", offset + MAX_GALLERY_ITEMS),
+    }
+
+
+def _extract_image_urls_from_results(results: list[dict[str, Any]]) -> list[str]:
+    """
+    Extracts image URLs from the results list.
+
+    Args:
+        results (list[dict[str, Any]]): The list of results containing media
+            information.
+    Returns:
+        list[str]: A list of extracted image URLs.
+    """
+    media_urls: list[str] = []
+    for item in results:
+        # Extract URL and token from item["media"]
+        media: dict[str, Any] = item.get("media", {})
+        if not media:
+            continue
+
+        base_uri: str | None = media.get("baseUri")
+        pretty_name: str | None = media.get("prettyName")
+        token_list: list[str] | None = media.get("token", [])
+        types: list[dict[str, Any]] = media.get("types", [])
+
+        # Basic validation
+        if not (base_uri and pretty_name and token_list and types):
+            continue
+
+        token: str = token_list[0]
+
+        # Find the 'fullview' type
+        fullview: dict[str, Any] | None = next(
+            (t for t in types if t.get("t") == "fullview"), None
+        )
+        if not fullview or not fullview.get("c"):
+            error_list.append(item["url"])
+            continue
+
+        # Build the full URL
+        image_path: str = fullview["c"].replace("<prettyName>", pretty_name)
+        media_url: str = f"{base_uri}{image_path}?token={token}"
+        media_urls.append(media_url)
+
+    return media_urls
 
 
 def get_gallery_media(
     session: Session, url: str, headers: dict[str, str], artist: str
-) -> list[str]:
+) -> Generator[list[str], None, None]:
     """
     Retrieves the gallery media from the specified URL using the provided
     session and headers. It extracts the total number of images and constructs
@@ -205,51 +356,51 @@ def get_gallery_media(
         artist (str): The name of the artist.
 
     Returns:
-        list[str]: A list of URLs for the gallery media.
+        Generator[list[str], None, None]: A generator yielding lists of media
+            URLs.
     """
     response: Response | None = send_request(session=session, url=url, headers=headers)
     if not response:
-        return []
+        return
 
     soup: BeautifulSoup = BeautifulSoup(response.text, "html.parser")
     span_tag: Tag | NavigableString | None = soup.find("span", class_="_1Mrww")
     if span_tag is None or isinstance(span_tag, NavigableString):
         print("Span tag not found.")
-        return []
+        return
 
-    total_images: int = int(span_tag.text.strip())
+    total_images: int | None = _extract_total_images(soup)
+    if total_images is None:
+        return
+
     print(f"Total images: {total_images}")
 
     csrf_token: str | None = extract_csrf_token(soup)
     if not csrf_token:
         print("CSRF token not found.")
-        return []
+        return
 
     folder_id: str = urlparse(url).path.split("/gallery/")[1].split("/")[0]
-    params: dict[str, str | int] = {
-        "username": artist,
-        "type": "gallery",
-        "order": "default",
-        "offset": 0,
-        "limit": MAX_GALLERY_ITEMS,
-        "folderid": folder_id,
-        "da_minor_version": 20230710,
-        "csrf_token": csrf_token,
-    }
+    offset: int = 0
 
-    api_url = "https://deviantart.com/_puppy/dashared/gallection/contents"
-    response = send_request(
-        session=session, url=api_url, headers=headers, params=params
-    )
-    if not response:
-        print("Failed to retrieve gallery media.")
-        return []
+    has_more: bool = True
+    while has_more:
+        media_batch: dict[str, Any] | None = _fetch_media_batch(
+            session,
+            headers,
+            artist,
+            folder_id,
+            offset,
+            csrf_token,
+        )
+        if not media_batch:
+            break
 
-    results = response.json().get("results", [])
-    print(f"Number of results: {len(results)}")
-    input("Press Enter to continue...")
+        yield media_batch["urls"]
 
-    return results
+        if not media_batch["has_more"]:
+            break
+        offset = media_batch["next_offset"]
 
 
 def save_deviantart_gallery(
@@ -274,9 +425,18 @@ def save_deviantart_gallery(
         print("No artist name provided.")
         artist = extract_artist_name(url)
 
-    for url in get_gallery_media(
-        session=session, url=url, headers=headers, artist=artist
-    ):
-        # Extract and save the image
-        print(f"Extracting and saving image from {url}...")
-        save_deviantart_art(session, url, headers, artist)
+    # Create directory for the artist if it doesn't exist
+    artist_path: Path = ensure_path_exists(artist)
+
+    for batch in get_gallery_media(session, url, headers, artist):
+        for media_url in batch:
+            download_media(media_url, artist_path)
+
+    print(ok_count)
+    if error_list:
+        print("Errors occurred during download:")
+        for error in error_list:
+            print(error)
+        print(f"Total errors: {len(error_list)}")
+    else:
+        print("All images downloaded successfully.")
