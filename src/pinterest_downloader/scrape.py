@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, ResultSet, Tag
 from fake_useragent import UserAgent
-from requests import Response, Session, get
+from requests_cache import AnyResponse, CachedSession
 from requests_pprint import print_response_summary
 from rich import print
 
@@ -27,20 +27,21 @@ def get_user_agent() -> str:
     return _user_agent
 
 
-def send_request(*, session: Session, **kwargs: Any) -> Optional[Response]:
+def send_request(*, session: CachedSession, **kwargs: Any) -> Optional[AnyResponse]:
     """
     Sends a GET request to the specified URL with the given headers and
     session. If the response is not OK, it prints the response summary and
     exits the program.
 
     Args:
-        session (requests.Session): The requests session to use.
+        session (requests_cache.CachedSession): The requests session to use.
         **kwargs: Additional keyword arguments like 'url', 'headers', etc.
 
     Returns:
-        Optional[requests.Response]: The response if successful, else None.
+        Optional[requests_cache.AnyResponse]: The response if successful, else
+            None.
     """
-    response: Response = session.get(**kwargs)
+    response: AnyResponse = session.get(**kwargs)
     if not response.ok:
         print_response_summary(response)
         return None
@@ -51,7 +52,7 @@ def send_request(*, session: Session, **kwargs: Any) -> Optional[Response]:
             print("Session cookies have been deleted. Please log in again.")
             return None
 
-        print("Session cookies have changed. Sending request again...")
+        print("[yellow]Session cookies have changed. Sending request again...[/]")
         # Retry the request with updated cookies
         return send_request(session=session, **kwargs)
 
@@ -165,7 +166,7 @@ def ensure_path_exists(folder_name: str) -> Path:
     return artist_path
 
 
-def download_media(url: str, artist_path: Path) -> None:
+def download_media(session: CachedSession, url: str, artist_path: Path) -> None:
     """
     Downloads media from the specified URL and saves it to the given artist path.
     If the response is not OK, it prints the response summary.
@@ -174,7 +175,7 @@ def download_media(url: str, artist_path: Path) -> None:
         url (str): The URL to download the media from.
         artist_path (Path): The path to save the downloaded media.
     """
-    response: Response = get(url)
+    response: AnyResponse = session.get(url)
     if not response.ok:
         print_response_summary(response)
         return
@@ -183,7 +184,7 @@ def download_media(url: str, artist_path: Path) -> None:
 
 
 def save_deviantart_art(
-    session: Session,
+    session: CachedSession,
     url: str,
     headers: dict[str, str],
     artist: Optional[str] = None,
@@ -193,13 +194,15 @@ def save_deviantart_art(
     If the session cookies change, it retries the request with updated cookies.
 
     Args:
-        session (requests.Session): The requests session to use.
+        session (requests_cache.CachedSession): The requests session to use.
         url (str): The URL to send the request to.
         headers (dict[str, str]): The headers to include in the request.
         artist (str): The name of the artist for saving the image. If not
             provided, it will be extracted from the URL.
     """
-    response: Response | None = send_request(session=session, url=url, headers=headers)
+    response: AnyResponse | None = send_request(
+        session=session, url=url, headers=headers
+    )
     if not response:
         return
 
@@ -215,7 +218,7 @@ def save_deviantart_art(
     if not img_url:
         return
 
-    download_media(img_url, artist_path)
+    download_media(session, img_url, artist_path)
 
 
 def _extract_total_images(soup: BeautifulSoup) -> Optional[int]:
@@ -241,7 +244,7 @@ def _extract_total_images(soup: BeautifulSoup) -> Optional[int]:
 
 
 def _fetch_media_batch(
-    session: Session,
+    session: CachedSession,
     headers: dict[str, str],
     artist: str,
     folder_id: str,
@@ -252,7 +255,7 @@ def _fetch_media_batch(
     Fetches a batch of media items from the DeviantArt API.
 
     Args:
-        session (requests.Session): The requests session to use.
+        session (requests_cache.CachedSession): The requests session to use.
         headers (dict[str, str]): The headers to include in the request.
         artist (str): The name of the artist.
         folder_id (str): The ID of the folder.
@@ -275,7 +278,7 @@ def _fetch_media_batch(
     }
 
     api_url = "https://deviantart.com/_puppy/dashared/gallection/contents"
-    response: Response | None = send_request(
+    response: AnyResponse | None = send_request(
         session=session, url=api_url, headers=headers, params=params
     )
     if not response:
@@ -342,7 +345,7 @@ def _extract_image_urls_from_results(results: list[dict[str, Any]]) -> list[str]
 
 
 def get_gallery_media(
-    session: Session, url: str, headers: dict[str, str], artist: str
+    session: CachedSession, url: str, headers: dict[str, str], artist: str
 ) -> Generator[list[str], None, None]:
     """
     Retrieves the gallery media from the specified URL using the provided
@@ -350,7 +353,7 @@ def get_gallery_media(
     the API URL for fetching the media.
 
     Args:
-        session (requests.Session): The requests session to use.
+        session (requests_cache.CachedSession): The requests session to use.
         url (str): The URL to send the request to.
         headers (dict[str, str]): The headers to include in the request.
         artist (str): The name of the artist.
@@ -359,7 +362,9 @@ def get_gallery_media(
         Generator[list[str], None, None]: A generator yielding lists of media
             URLs.
     """
-    response: Response | None = send_request(session=session, url=url, headers=headers)
+    response: AnyResponse | None = send_request(
+        session=session, url=url, headers=headers
+    )
     if not response:
         return
 
@@ -396,6 +401,7 @@ def get_gallery_media(
         if not media_batch:
             break
 
+        print("Found total images:", len(media_batch["urls"]))
         yield media_batch["urls"]
 
         if not media_batch["has_more"]:
@@ -404,7 +410,7 @@ def get_gallery_media(
 
 
 def save_deviantart_gallery(
-    session: Session,
+    session: CachedSession,
     url: str,
     headers: dict[str, str],
     artist: Optional[str] = None,
@@ -415,7 +421,7 @@ def save_deviantart_gallery(
     cookies.
 
     Args:
-        session (requests.Session): The requests session to use.
+        session (requests_cache.CachedSession): The requests session to use.
         url (str): The URL to send the request to.
         headers (dict[str, str]): The headers to include in the request.
         artist (str): The name of the artist. If not provided, it will be
@@ -430,7 +436,7 @@ def save_deviantart_gallery(
 
     for batch in get_gallery_media(session, url, headers, artist):
         for media_url in batch:
-            download_media(media_url, artist_path)
+            download_media(session, media_url, artist_path)
 
     print(ok_count)
     if error_list:

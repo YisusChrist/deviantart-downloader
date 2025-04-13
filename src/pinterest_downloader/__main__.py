@@ -1,6 +1,6 @@
 from urllib.parse import ParseResult, urlparse
 
-from requests import Session
+from requests_cache import CachedSession
 from rich import print
 
 from pinterest_downloader.cookies import load_cookies, save_cookies
@@ -26,7 +26,7 @@ def main() -> None:
         print("No URL provided.")
         return
 
-    session = Session()
+    session = CachedSession(cache_control=True)
 
     headers: dict[str, str] = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
