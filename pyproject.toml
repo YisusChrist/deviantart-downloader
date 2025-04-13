@@ -7,10 +7,10 @@ authors = [{ name = "YisusChrist", email = "agelrenorenardo@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.9,<4.0"
 dependencies = [
-  "requests (>=2.32.3,<3.0.0)",
-  "requests-pprint (>=1.2.2,<2.0.0)",
   "beautifulsoup4 (>=4.13.3,<5.0.0)",
   "fake-useragent (>=2.1.0,<3.0.0)",
+  "requests-cache (>=1.2.1,<2.0.0)",
+  "requests-pprint (>=1.2.2,<2.0.0)",
 ]
 
 [project.urls]
