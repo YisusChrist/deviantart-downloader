@@ -332,12 +332,12 @@ def _extract_image_urls_from_results(results: list[dict[str, Any]]) -> list[str]
         fullview: dict[str, Any] | None = next(
             (t for t in types if t.get("t") == "fullview"), None
         )
-        if not fullview or not fullview.get("c"):
+        if not fullview:
             error_list.append(item["url"])
             continue
 
         # Build the full URL
-        image_path: str = fullview["c"].replace("<prettyName>", pretty_name)
+        image_path: str = fullview.get("c", "").replace("<prettyName>", pretty_name)
         media_url: str = f"{base_uri}{image_path}?token={token}"
         media_urls.append(media_url)
 
